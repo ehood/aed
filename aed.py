@@ -7,7 +7,7 @@ local_dir = './Traffic/'
 
 # { res_id:{}}
 token_dict = {}
-cookie = "wordpress_sec_f9beb4299cf48ba783392df50dfb1aba=NotRoot%7C1485555706%7CTUKtU5m9k9izclLlefwz4e2yVSljwPxqeXUFQnwYnLq%7Cc98025cb8d228e34ba2fae451868ebef6c5311bae64fdcfdb107f787426477e6; wp-settings-time-2=1485194802; XDEBUG_SESSION=cloud9ide; wordpress_test_cookie=WP+Cookie+check; wordpress_logged_in_f9beb4299cf48ba783392df50dfb1aba=NotRoot%7C1485555706%7CTUKtU5m9k9izclLlefwz4e2yVSljwPxqeXUFQnwYnLq%7Cc75e81b89a0e25fc21ad3bd2e449eabe35dd7a71dc929eb8c1db7a272635c304"
+cookie = ""
 
 
 def is_token_in_dict(req_id):
