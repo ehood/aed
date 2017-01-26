@@ -121,7 +121,8 @@ def get_new_token(res_id):
         if token_dict[key]['req_id'] == res_id:
             start_index = token_dict[key]['start']
             end_index = start_index + len(token_dict[key]['token1'])
-            res_body = send_request_with_new_token().content
+            # MISSING IMPLEMENTION
+            res_body = send_request_with_new_token(token_dict[key]['req_id'],get_new_token).content
             return extract_token_from_response(res_body, start_index, end_index)
 
 
