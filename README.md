@@ -60,7 +60,19 @@ you can see the original request in "./Traffic/num/num_req.json".
 
 ## How the analysis works
 
-Basiclly, ssdeep for comparing response ,token pattern matching for handling nonces, csrf-token and more...
+Basiclly, ssdeep for comparing response ,token pattern matching for handling nonces, csrf-token and more.
+
+Example of captured tokens:
+
+###'token2': 
+```
+['5', '5', '5', '5', '_wpnonce=a4023898ba', '5', '5', '5', '5', '5', '5', '5', 'a1ce8776c8', '89382292aa', '155eac880b', '4371fdd278']
+```
+###'token1': 
+```
+['6', '6', '6', '6', '_wpnonce=933b6a2f7c', '6', '6', '6', '6', '6', '6', '6', 'f214ef86e9', 'a2ec4566e9', '4bb737e5dc', '8b144b67e1']
+```
+
 
 Created by : Tiko and Ehood.
 
