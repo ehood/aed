@@ -1,4 +1,4 @@
-# AED
+# AED - under development
 
 
 Our project's goal is to provide an automated detection of authorization vulnerabilities; in effect, provide authorization enforcement in websites. We want to provide administrators or their representatives (white-hat pen-testers, etc.) with the knowledge of if and how an attacker can bypass authorization access control.
