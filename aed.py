@@ -6,37 +6,61 @@ import ssdeep
 local_dir = './Traffic/'
 
 # { res_id:{}}
-token_dict = {}
+# {res_id : {
+#               token1 : [] // the tokens in original response
+#               token2 : [] // the tokens in the response to the copy of the request we sent.
+#               start :  [] // start index of each token
+#             } , ...
+# }
+res_token_dict = {}
+# { req_id :  [ {
+#               body : True/False // specify if the token was found in the body of the request (in the params)
+#               param_name :      // the param name in which we found the token
+#               token_index :     // the token index in the above dictionary
+#               res_id :          //the id of the response where the token is found.},... ] , ...
+# }
+req_dict = {}
 cookie = ""
 
 
-def is_token_in_dict(req_id):
+def update_res_token_dict(req_id):
     try:
-        with open(local_dir + str(req_id) + '/' + str(req_id) + '_req.json', 'r') as fp:
-            data = json.load(fp)
-    except IOError as io:
-        print "Error IO req_id : ", req_id
-        print io
+       data = get_json(req_id)
     except ValueError as ve:
         print "Value Error in Json : ", ve
+        return
     try:
         if not data or not data['params']:
             return None
     except Exception as ex:
         print "Exception : ", ex
 
-    for obj in token_dict:
+    for obj in res_token_dict:
         for key, value in data['params'].iteritems():
-            if value.find(token_dict[obj]['token1']) != -1:
-                token_dict[obj]['req_id'] = req_id
-                token_dict[obj]['body'] = True
-                token_dict[obj]['param_name'] = key
-                return obj
-        if data['url'].find(token_dict[obj]['token1']) != -1:
-            token_dict[obj]['req_id'] = req_id
-            token_dict[obj]['body'] = False
-            token_dict[obj]['param_name'] = None
-            return obj
+            i = 0
+            flag = False
+            for token in res_token_dict[obj]['token1']:
+                if token == value:
+                    val = {'body': True,
+                           'param_name': key,
+                           'token_index': i,
+                           'res_id': obj}
+                    if req_id in req_dict:
+                        req_dict[req_id].append(val)
+                    else:
+                        req_dict[req_id] = [val]
+                i += 1
+
+        # TODO - add multiple query params support
+        if not flag:
+            i = 0
+            for token in res_token_dict[obj]['token1']:
+                if data['url'].find(token) != -1:
+                    val = {'body': False,
+                           'param_name': None,
+                           'token_index': i,
+                           'res_id': obj}
+                    req_dict[req_id] = [val]
 
 
 def round_one(last_req_id):
@@ -54,22 +78,15 @@ def round_one(last_req_id):
 
 
 def round_one_step_i(i):
-    id_of_res = is_token_in_dict(i)
+    update_res_token_dict(i)
     try:
         if os.path.isfile(local_dir + str(i) + '/' + str(i) + '_resSecond'):
-            with open(local_dir + str(i) + '/' + str(i) + '_resSecond', 'rb') as r:
-                res = r.read()
+            res = get_res_from_file(i)
         else:
-            if not id_of_res:
-                res = send_req(i, None)
-                if not res:
-                    return
-                res = res.content
-            else:
-                res = send_req(i, id_of_res)
-                if not res:
-                    return
-                res = res.content
+            res = send_req(i)
+            if not res:
+                return
+            res = res.content
         compare_response_for_token(res, i)
     except IOError as io:
         print "Error io - req : ", i, " ", io
@@ -77,95 +94,132 @@ def round_one_step_i(i):
 
 def round_two(last_req_id):
     flag = False
+    tokens = []
     for i in xrange(0, last_req_id):
-        for key, value in token_dict.iteritems():
-            if value['req_id'] == i:
-                try:
-                    token = get_new_token(key)
-                    flag = True
-                    break
-                except Exception as ex:
-                    print "Exception : ", ex
-
+        if i in req_dict:
+            try:
+                tokens = get_new_token(i)
+                flag = True
+                break
+            except Exception as ex:
+                print "Exception : ", ex
+                flag = False
         if flag:
-            res = send_request_with_cookie(i, token)
-            if res is None:
-                continue
+            res = send_request_with_cookie(i, tokens)
         else:
             res = send_request_with_cookie(i, None)
-            if res is None:
-                continue
+        if res is None:
+            continue
+
         compare_responses_cookie(i, res)
 
 
-def send_req(req_id, id_of_res):
-    with open(local_dir + str(req_id) + '/' + str(req_id) + '_req.json', 'r') as fp:
-        data = json.load(fp)
+def get_tokens_from_res_dict(res_id, index):
+    return res_token_dict[res_id]['token1'][index], res_token_dict[res_id]['token2'][index]
+
+
+def send_req(req_id):
+    data = get_json(req_id)
     if not data:
         return None
     if data['method'] == "GET":
-        if id_of_res:
-            if not data['body']:
-                data['url'] = data['url'].replace(token_dict[id_of_res]['token1'], token_dict[id_of_res]['token2'])
+        if req_dict:
+            for key in req_dict[req_id]:
+                if not req_dict[req_id][key]['body']:
+                    id_of_res = req_dict[req_id][key]['res_id']
+                    t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
+                    data['url'] = data['url'].replace(t1, t2)
         r = requests.get(data['url'], headers=data['headers'])
     elif data['method'] == "POST":
-        if id_of_res:
-            if data['body']:
-                data['params'][token_dict[id_of_res]['param_name']] = data['params'][token_dict[id_of_res]['param_name']].replace(token_dict[id_of_res]['token1'],token_dict[id_of_res]['token2'])
+        if req_dict:
+            for key in req_dict[req_id]:
+                if req_dict[req_id][key]['body']:
+                    id_of_res = req_dict[req_id][key]['res_id']
+                    t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
+                    data['params'] = data['params'][req_dict[req_id][key]['param_name']].replace(t1,t2)
         r = requests.post(data['url'], headers=data['headers'], data=data['params'])
     return r
 
 
-def get_new_token(res_id):
-    for key in token_dict:
-        if token_dict[key]['req_id'] == res_id:
-            start_index = token_dict[key]['start']
-            end_index = start_index + len(token_dict[key]['token1'])
-            # MISSING IMPLEMENTION
-            res_body = send_request_with_new_token(token_dict[key]['req_id'],get_new_token).content
-            return extract_token_from_response(res_body, start_index, end_index)
+def get_new_token(req_id):
+    tokens = []
+    if req_id not in req_dict:
+        return []
+    else:
+        for item in req_dict[req_id]:
+            if item['res_id'] in req_dict:
+                t = get_new_token(item['res_id'])
+                res_body = send_request_with_new_token(item['res_id'], t).content
+                start_index = res_token_dict[item['token_index']]['start']
+                end_index = start_index + len(res_token_dict[item['token_index']]['token1'])
+                token = extract_token_from_response(res_body, start_index, end_index)
+                tokens.append(token)
+            else:
+                res_body = send_req(item['res_id']).content
+                start_index = res_token_dict[item['token_index']]['start']
+                end_index = start_index + len(res_token_dict[item['token_index']]['token1'])
+                token = extract_token_from_response(res_body, start_index, end_index)
+                tokens.append(token)
+        return tokens
 
 
 def extract_token_from_response(text, start_index, end_index):
     return text[start_index:end_index]
 
 
-def send_request_with_cookie(req_id, new_token):
-    with open(local_dir + str(req_id) + '/' + str(req_id) + '_req.json', 'r') as fp:
-        data = json.load(fp)
+def send_request_with_cookie(req_id, new_tokens):
+    data = get_json(req_id)
     if not data:
         return None
     if not ('cookie' in data['headers']):
         return None
     data['headers']['cookie'] = cookie
     if data['method'] == "GET":
-        if new_token:
-            if req_id in token_dict:
-                if not token_dict[req_id]['body']:
-                    data['url'] = data['url'].replace(token_dict[req_id]['token1'], new_token)
+        j = 0
+        if req_dict:
+            for key in req_dict[req_id]:
+                if not req_dict[req_id][key]['body']:
+                    id_of_res = req_dict[req_id][key]['res_id']
+                    t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
+                    data['url'] = data['url'].replace(t1, new_tokens[j])
+                j += 1
         r = requests.get(data['url'], headers=data['headers'])
     elif data['method'] == "POST":
-        if req_id:
-            if new_token:
-                if req_id in token_dict:
-                    if token_dict[req_id]['body']:
-                        data['params'][token_dict[req_id]['param_name']] = data['params'][token_dict[req_id]['param_name']].replace(token_dict[req_id]['token1'], new_token)
-        r = requests.post(data['url'], headers=data['headers'], data=data['params'])
+        j = 0
+        if req_dict:
+            for key in req_dict[req_id]:
+                if req_dict[req_id][key]['body']:
+                    id_of_res = req_dict[req_id][key]['res_id']
+                    t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
+                    data['params'] = data['params'][req_dict[req_id][key]['param_name']].replace(t1, new_tokens[j])
+                j += 1
+            r = requests.post(data['url'], headers=data['headers'], data=data['params'])
     return r
 
 
-def send_request_with_new_token(req_id, new_token):
-    with open(local_dir + str(req_id) + '/' + str(req_id) + '_req.json', 'r') as fp:
-        data = json.load(fp)
+def send_request_with_new_token(req_id, new_tokens):
+    data = get_json(req_id)
+    if not data:
+        return None
     if data['method'] == "GET":
-        if new_token:
-            if not data['body']:
-                data['url'] = data['url'].replace(token_dict[req_id]['token1'], new_token)
-        r = requests.get(data['url'],headers=data['headers'])
+        j = 0
+        if req_dict:
+            for key in req_dict[req_id]:
+                if not req_dict[req_id][key]['body']:
+                    id_of_res = req_dict[req_id][key]['res_id']
+                    t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
+                    data['url'] = data['url'].replace(t1, new_tokens[j])
+                j+=1
+        r = requests.get(data['url'], headers=data['headers'])
     elif data['method'] == "POST":
-        if req_id:
-            if data['body']:
-                data['params'][token_dict[req_id]['param_name']] = data['params'][token_dict[req_id]['param_name']].replace(token_dict[req_id]['token1'], new_token)
+        j = 0
+        if req_dict:
+            for key in req_dict[req_id]:
+                if req_dict[req_id][key]['body']:
+                    id_of_res = req_dict[req_id][key]['res_id']
+                    t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
+                    data['params'] = data['params'][req_dict[req_id][key]['param_name']].replace(t1, new_tokens[j])
+                j += 1
         r = requests.post(data['url'], headers=data['headers'], data=data['params'])
     return r
 
@@ -179,36 +233,70 @@ def compare_responses_cookie(res_id, res):
 
     if var > 95:
         print "req ", res_id, 'passed'
+    elif var > 80:
+        print "req ", res_id, 'suspicious'
     else:
         print "req ", res_id, 'ok'
 
 
 # compare the response with the response that we have stored as response of req_id
 def compare_response_for_token(res, req_id):
-    try:
-        with open(local_dir + str(req_id) + '/' + str(req_id)+'_res', 'r') as response:
-            res_copy = response.read()
-            try:
-                st, end = compare.find_hidden_input(res, res_copy)
-                if not st and not end:
-                    st, end = compare.find_diff_str(res, res_copy)
-            except Exception as ex:
-                print "Error in compare.py : ", ex, " Req : ", req_id
-    except IOError as io:
-        print "Error : ", io
 
-    if st and end:
-        token_dict[req_id] = {'req_id': '',
-                              'body': False,
-                              'token1': res_copy[st:end],
-                              'token2': res[st:end],
-                              'start': st}
+    res_copy = get_res1_from_file(req_id)
+    if not res_copy:
+        return
+    try:
+        st, end = compare.find_hidden_input(res, res_copy)
+        if not st and not end:
+            st = compare.find_diff_str(res, res_copy)
+            if st:
+                res_token_dict[req_id] = {
+                                      'token1': [res_copy[s:e] for s, e in st],
+                                      'token2': [res[s:e] for s, e in st],
+                                      'start': st}
+        else:
+            res_token_dict[req_id] = {
+                                  'token1': [res_copy[st:end]],
+                                  'token2': [res[st:end]],
+                                  'start': [st]}
+    except Exception as ex:
+        print "Error in compare.py : ", ex, " Req : ", req_id
     try:
         if not os.path.isfile(local_dir + str(req_id) + '/' + str(req_id) + '_resSecond'):
             with open(local_dir + str(req_id) + '/' + str(req_id) + '_resSecond', 'wb') as body:
                 body.write(res)
     except IOError as io:
         print "Error : ", io
+
+
+def get_res_from_file(_id):
+    try:
+        with open(local_dir + str(_id) + '/' + str(_id) + '_resSecond', 'rb') as r:
+            res = r.read()
+            return res
+    except IOError as io:
+        print "res ", _id, " IO ERROR - ", io
+        return None
+
+
+def get_res1_from_file(_id):
+    try:
+        with open(local_dir + str(_id) + '/' + str(_id) + '_res', 'rb') as r:
+            res = r.read()
+            return res
+    except IOError as io:
+        print "res ", _id, " IO ERROR - ", io
+        return None
+
+
+def get_json(_id):
+    try:
+        with open(local_dir + str(_id) + '/' + str(_id) + '_req.json', 'r') as fp:
+            data = json.load(fp)
+        return data
+    except IOError as io:
+        print "req ", _id, " IO ERROR - ", io
+        return None
 
 
 def start(last_req_id):
