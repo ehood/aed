@@ -84,7 +84,7 @@ def round_one_step_i(i):
             res = get_res_from_file(i)
         else:
             res = send_req(i)
-            if not res:
+            if res is None:
                 return
             res = res.content
         compare_response_for_token(res, i)
@@ -150,9 +150,9 @@ def get_new_token(req_id):
             if item['res_id'] in req_dict:
                 t = get_new_token(item['res_id'])
                 res_body = send_request_with_new_token(item['res_id'], t).content
-                start_index = res_token_dict[item['token_index']]['start']
-                end_index = start_index + len(res_token_dict[item['token_index']]['token1'])
-                token = extract_token_from_response(res_body, start_index, end_index)
+                res_body_second = get_res_from_file(item['token_index']['res_id'])
+                t1, t2 = compare.find_diff_str(res_body_second, res_body)
+                token = t2[item['token_index']]
                 tokens.append(token)
             else:
                 res_body = send_req(item['res_id']).content
@@ -225,6 +225,9 @@ def send_request_with_new_token(req_id, new_tokens):
 
 
 def compare_responses_cookie(res_id, res):
+    if not os.path.isfile(local_dir + str(res_id) + '/' + str(res_id) + '_resSecond'):
+        print "req ", res_id, 'ok'
+        return
     with open(local_dir + str(res_id) + '/' + str(res_id) + '_resSecond', 'r') as response:
         res_copy = response.read()
         s1 = ssdeep.hash(res_copy, encoding='utf-8')
@@ -248,17 +251,17 @@ def compare_response_for_token(res, req_id):
     try:
         st, end = compare.find_hidden_input(res, res_copy)
         if not st and not end:
-            st = compare.find_diff_str(res, res_copy)
+            st, end = compare.find_diff_str(res, res_copy)
             if st:
                 res_token_dict[req_id] = {
-                                      'token1': [res_copy[s:e] for s, e in st],
-                                      'token2': [res[s:e] for s, e in st],
-                                      'start': st}
+                                      'token1': st,
+                                      'token2': end
+                }
         else:
             res_token_dict[req_id] = {
-                                  'token1': [res_copy[st:end]],
-                                  'token2': [res[st:end]],
-                                  'start': [st]}
+                                  'token1': [st],
+                                  'token2': [end]
+            }
     except Exception as ex:
         print "Error in compare.py : ", ex, " Req : ", req_id
     try:
@@ -302,4 +305,3 @@ def get_json(_id):
 def start(last_req_id):
     round_one(last_req_id)
     round_two(last_req_id)
-
