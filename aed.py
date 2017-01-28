@@ -9,7 +9,6 @@ local_dir = './Traffic/'
 # {res_id : {
 #               token1 : [] // the tokens in original response
 #               token2 : [] // the tokens in the response to the copy of the request we sent.
-#               start :  [] // start index of each token
 #             } , ...
 # }
 res_token_dict = {}
