@@ -192,7 +192,7 @@ def send_request_with_cookie(req_id, new_tokens):
                     t1, t2 = get_tokens_from_res_dict(id_of_res, req_dict[req_id][key]['token_index'])
                     data['params'] = data['params'][req_dict[req_id][key]['param_name']].replace(t1, new_tokens[j])
                 j += 1
-            r = requests.post(data['url'], headers=data['headers'], data=data['params'])
+        r = requests.post(data['url'], headers=data['headers'], data=data['params'])
     return r
 
 
